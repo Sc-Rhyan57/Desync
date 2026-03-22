@@ -38,31 +38,34 @@ class DesyncVpnService : VpnService() {
         val droppedPackets = AtomicLong(0L)
         val lastDelayMs    = AtomicLong(0L)
 
-        var minLagMs      = 60L
-        var maxLagMs      = 180L
-        var dropPercent   = 0f
-        var spikePercent  = 5f
+        @Volatile var minLagMs      = 60L
+        @Volatile var maxLagMs      = 180L
+        @Volatile var dropPercent   = 0f
+        @Volatile var spikePercent  = 5f
     }
 
-    private var tunInterface: ParcelFileDescriptor? = null
+    private var tunFd: ParcelFileDescriptor? = null
     private val scope      = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var tunnelJob: Job? = null
 
-    data class DelayedPacket(val data: ByteArray, val releaseAt: Long)
+    private data class DelayedPacket(val data: ByteArray, val releaseAt: Long)
 
-    private val outQueue = ConcurrentLinkedQueue<DelayedPacket>()
+    private val queue = ConcurrentLinkedQueue<DelayedPacket>()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { stopVpn(); return START_NOT_STICKY }
-        if (!isRunning.get()) startVpn()
+        if (intent?.action == ACTION_STOP) {
+            stopTun()
+            return START_NOT_STICKY
+        }
+        if (!isRunning.get()) startTun()
         return START_STICKY
     }
 
-    private fun startVpn() {
-        createNotificationChannel()
-        startForeground(NOTIF_ID, buildNotification())
+    private fun startTun() {
+        createChannel()
+        startForeground(NOTIF_ID, buildNotif())
 
-        val builder = Builder()
+        val tun = Builder()
             .setSession("Desync")
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
@@ -70,75 +73,71 @@ class DesyncVpnService : VpnService() {
             .addDnsServer("1.1.1.1")
             .setMtu(1500)
             .setBlocking(true)
+            .also { try { it.addDisallowedApplication(packageName) } catch (_: Exception) {} }
+            .establish() ?: return
 
-        try { builder.addDisallowedApplication(packageName) } catch (_: Exception) {}
-
-        tunInterface = builder.establish() ?: return
+        tunFd = tun
         isRunning.set(true)
         totalPackets.set(0L)
         delayedPackets.set(0L)
         droppedPackets.set(0L)
-        DesyncLog.add("START", "TUN estabelecido — interceptando todo o tráfego do dispositivo")
+        DesyncLog.add("START", "TUN ativo — interceptando todo o tráfego do dispositivo")
 
         tunnelJob = scope.launch { runTunnel() }
     }
 
-    private fun stopVpn() {
+    private fun stopTun() {
         tunnelJob?.cancel()
-        tunInterface?.close()
-        tunInterface = null
+        tunFd?.close()
+        tunFd = null
         isRunning.set(false)
-        outQueue.clear()
-        DesyncLog.add("STOP", "TUN fechado — tráfego restaurado")
+        queue.clear()
+        lastDelayMs.set(0L)
+        DesyncLog.add("STOP", "TUN fechado — tráfego restaurado ao normal")
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     private suspend fun runTunnel() {
-        val tun   = tunInterface ?: return
-        val inFd  = FileInputStream(tun.fileDescriptor)
-        val outFd = FileOutputStream(tun.fileDescriptor)
+        val fd    = tunFd ?: return
+        val inFd  = FileInputStream(fd.fileDescriptor)
+        val outFd = FileOutputStream(fd.fileDescriptor)
         val buf   = ByteArray(32767)
 
-        scope.launch { drainQueue(outFd) }
+        scope.launch { drain(outFd) }
 
         while (currentCoroutineContext().isActive) {
             val len = inFd.read(buf)
             if (len <= 0) { delay(1); continue }
 
-            val pkt = buf.copyOf(len)
             totalPackets.incrementAndGet()
 
             if (dropPercent > 0f && Random.nextFloat() < dropPercent / 100f) {
                 droppedPackets.incrementAndGet()
-                DesyncLog.add("DROP", "Pacote descartado — ${len}B (loss=${dropPercent.toInt()}%)")
+                val proto = protoName(if (len >= 10) buf[9].toInt() and 0xFF else 0)
+                DesyncLog.add("DROP", "Descartado $proto ${len}B (${dropPercent.toInt()}% loss)")
                 continue
             }
 
-            val lagMs     = computeLag()
+            val lagMs     = calcLag()
             val releaseAt = System.currentTimeMillis() + lagMs
             lastDelayMs.set(lagMs)
             delayedPackets.incrementAndGet()
 
-            val proto = if (len >= 10) buf[9].toInt() and 0xFF else 0
-            val protoName = when (proto) { 6 -> "TCP"; 17 -> "UDP"; 1 -> "ICMP"; else -> "IP" }
-            DesyncLog.add("LAG", "Âncora +${lagMs}ms [$protoName ${len}B]")
-
-            outQueue.add(DelayedPacket(pkt, releaseAt))
+            val proto = protoName(if (len >= 10) buf[9].toInt() and 0xFF else 0)
+            DesyncLog.add("LAG", "+${lagMs}ms [$proto ${len}B] (âncora)")
+            queue.add(DelayedPacket(buf.copyOf(len), releaseAt))
         }
     }
 
-    private suspend fun drainQueue(outFd: FileOutputStream) {
+    private suspend fun drain(outFd: FileOutputStream) {
         while (currentCoroutineContext().isActive) {
             val now  = System.currentTimeMillis()
-            val iter = outQueue.iterator()
+            val iter = queue.iterator()
             while (iter.hasNext()) {
-                val pkt = iter.next()
-                if (now >= pkt.releaseAt) {
-                    try {
-                        outFd.write(pkt.data)
-                        DesyncLog.add("OUT", "Liberado ${pkt.data.size}B → NIC real")
-                    } catch (_: Exception) {}
+                val p = iter.next()
+                if (now >= p.releaseAt) {
+                    try { outFd.write(p.data) } catch (_: Exception) {}
                     iter.remove()
                     lastDelayMs.set(0L)
                 }
@@ -147,45 +146,68 @@ class DesyncVpnService : VpnService() {
         }
     }
 
-    private fun computeLag(): Long {
-        val isSpike = spikePercent > 0f && Random.nextFloat() < spikePercent / 100f
+    private fun calcLag(): Long {
         val base = if (maxLagMs > minLagMs)
             minLagMs + abs(Random.nextLong()) % (maxLagMs - minLagMs)
         else minLagMs
-        return if (isSpike) {
+
+        return if (spikePercent > 0f && Random.nextFloat() < spikePercent / 100f) {
             val spike = (base * (1.5f + Random.nextFloat() * 2f)).toLong()
-            DesyncLog.add("SPIKE", "Spike de lag! +${spike}ms")
+            DesyncLog.add("SPIKE", "Spike! +${spike}ms")
             spike
         } else base
     }
 
-    override fun onDestroy() { stopVpn(); super.onDestroy() }
+    private fun protoName(proto: Int) = when (proto) {
+        6 -> "TCP"; 17 -> "UDP"; 1 -> "ICMP"; else -> "IP"
+    }
 
-    private fun createNotificationChannel() {
+    override fun onDestroy() { stopTun(); super.onDestroy() }
+
+    private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(CHANNEL_ID, "Desync VPN", NotificationManager.IMPORTANCE_LOW)
-            ch.description = "Desync fake lag engine"
+            ch.description = "Fake lag engine"
             (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(ch)
         }
     }
 
-    private fun buildNotification(): Notification {
-        val contentPi = PendingIntent.getActivity(this, 0,
-            Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val stopPi = PendingIntent.getService(this, 1,
-            Intent(this, DesyncVpnService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
+    private fun buildNotif(): Notification {
+        val contentPi = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        val stopPi = PendingIntent.getService(
+            this, 1,
+            Intent(this, DesyncVpnService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE
+        )
 
-        val b = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
-        else @Suppress("DEPRECATION") Notification.Builder(this)
-
-        return b.setContentTitle("Desync Ativo")
-            .setContentText("Fake lag: ${minLagMs}–${maxLagMs}ms em todos os pacotes")
-            .setSmallIcon(android.R.drawable.ic_menu_manage)
-            .setContentIntent(contentPi)
-            .addAction(android.R.drawable.ic_delete, "Parar", stopPi)
-            .setOngoing(true)
-            .build()
+                .setContentTitle("Desync Ativo")
+                .setContentText("Lag: ${minLagMs}–${maxLagMs}ms em todos os pacotes")
+                .setSmallIcon(android.R.drawable.ic_menu_manage)
+                .setContentIntent(contentPi)
+                .addAction(
+                    Notification.Action.Builder(
+                        null, "Parar",
+                        stopPi
+                    ).build()
+                )
+                .setOngoing(true)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setContentTitle("Desync Ativo")
+                .setContentText("Lag: ${minLagMs}–${maxLagMs}ms em todos os pacotes")
+                .setSmallIcon(android.R.drawable.ic_menu_manage)
+                .setContentIntent(contentPi)
+                .setOngoing(true)
+                .build()
+        }
     }
 }
 
