@@ -5,29 +5,22 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.PixelFormat
 import android.net.VpnService
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
-import android.view.Gravity
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseInOutCubic
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -93,7 +86,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -105,7 +97,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -114,8 +105,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -149,8 +138,8 @@ private object C {
 }
 
 private object R {
-    val S  = 8.dp;  val M  = 12.dp; val L  = 16.dp
-    val XL = 20.dp; val C  = 18.dp; val Bt = 14.dp; val Bg = 20.dp
+    val S  = 8.dp; val M  = 12.dp; val L  = 16.dp
+    val XL = 20.dp; val C = 18.dp; val Bt = 14.dp; val Bg = 20.dp
 }
 
 private val Scheme = darkColorScheme(
@@ -177,9 +166,6 @@ private const val KEY_RISK   = "risk_acked"
 
 class MainActivity : ComponentActivity() {
 
-    private var floatWm: WindowManager? = null
-    private var floatView: ComposeView? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setupCrash()
@@ -189,20 +175,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme(colorScheme = Scheme) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color     = C.Bg
-                ) {
-                    if (trace != null) CrashScreen(trace)
-                    else App()
+                Surface(modifier = Modifier.fillMaxSize(), color = C.Bg) {
+                    if (trace != null) CrashScreen(trace) else App()
                 }
             }
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        removeFloatButton()
     }
 
     private fun setupCrash() {
@@ -218,11 +195,6 @@ class MainActivity : ComponentActivity() {
             } catch (_: Exception) { def?.uncaughtException(t, e) }
             android.os.Process.killProcess(android.os.Process.myPid()); System.exit(2)
         }
-    }
-
-    private fun removeFloatButton() {
-        try { floatWm?.removeView(floatView) } catch (_: Exception) {}
-        floatView = null
     }
 
     @Composable
@@ -264,24 +236,24 @@ class MainActivity : ComponentActivity() {
         val ctx   = this
         val prefs = remember { getSharedPreferences(PREF_SETS, Context.MODE_PRIVATE) }
 
-        var active        by remember { mutableStateOf(DesyncVpnService.isRunning.get()) }
-        var minLag        by remember { mutableFloatStateOf(prefs.getFloat(KEY_MIN, 60f)) }
-        var maxLag        by remember { mutableFloatStateOf(prefs.getFloat(KEY_MAX, 180f)) }
-        var dropPct       by remember { mutableFloatStateOf(prefs.getFloat(KEY_DROP, 0f)) }
-        var spikePct      by remember { mutableFloatStateOf(prefs.getFloat(KEY_SPIKE, 5f)) }
-        var riskAcked     by remember { mutableStateOf(prefs.getBoolean(KEY_RISK, false)) }
-        var showSettings  by remember { mutableStateOf(false) }
-        var showLogs      by remember { mutableStateOf(false) }
-        var showRisk      by remember { mutableStateOf(false) }
-        var logEnabled    by remember { mutableStateOf(true) }
-        var footerClicks  by remember { mutableIntStateOf(0) }
-        var totalPkts     by remember { mutableLongStateOf(0L) }
-        var delayedPkts   by remember { mutableLongStateOf(0L) }
-        var droppedPkts   by remember { mutableLongStateOf(0L) }
-        var curDelay      by remember { mutableLongStateOf(0L) }
-        var wifiName      by remember { mutableStateOf<String?>(null) }
-        val pingHistory   = remember { mutableStateListOf<Long>() }
-        val logSnapshot   = remember { mutableStateListOf<DesyncLog.LogEntry>() }
+        var active       by remember { mutableStateOf(DesyncVpnService.isRunning.get()) }
+        var minLag       by remember { mutableFloatStateOf(prefs.getFloat(KEY_MIN, 60f)) }
+        var maxLag       by remember { mutableFloatStateOf(prefs.getFloat(KEY_MAX, 180f)) }
+        var dropPct      by remember { mutableFloatStateOf(prefs.getFloat(KEY_DROP, 0f)) }
+        var spikePct     by remember { mutableFloatStateOf(prefs.getFloat(KEY_SPIKE, 5f)) }
+        var riskAcked    by remember { mutableStateOf(prefs.getBoolean(KEY_RISK, false)) }
+        var showSettings by remember { mutableStateOf(false) }
+        var showLogs     by remember { mutableStateOf(false) }
+        var showRisk     by remember { mutableStateOf(false) }
+        var logEnabled   by remember { mutableStateOf(true) }
+        var footerClicks by remember { mutableIntStateOf(0) }
+        var totalPkts    by remember { mutableLongStateOf(0L) }
+        var delayedPkts  by remember { mutableLongStateOf(0L) }
+        var droppedPkts  by remember { mutableLongStateOf(0L) }
+        var curDelay     by remember { mutableLongStateOf(0L) }
+        var wifiName     by remember { mutableStateOf<String?>(null) }
+        val pingHistory  = remember { mutableStateListOf<Long>() }
+        val logSnapshot  = remember { mutableStateListOf<DesyncLog.LogEntry>() }
 
         DesyncLog.enabled.set(logEnabled)
 
@@ -310,14 +282,8 @@ class MainActivity : ComponentActivity() {
                 if (active) {
                     DesyncLog.snapshot()
                         .firstOrNull { it.level == "LAG" || it.level == "SPIKE" }
-                        ?.message
-                        ?.substringAfter("+")
-                        ?.substringBefore("ms")
-                        ?.toLongOrNull()
-                        ?.let { ms ->
-                            if (pingHistory.size >= 60) pingHistory.removeAt(0)
-                            pingHistory.add(ms)
-                        }
+                        ?.message?.substringAfter("+")?.substringBefore("ms")?.toLongOrNull()
+                        ?.let { ms -> if (pingHistory.size >= 60) pingHistory.removeAt(0); pingHistory.add(ms) }
                 }
                 logSnapshot.clear()
                 logSnapshot.addAll(DesyncLog.snapshot().take(200))
@@ -329,8 +295,7 @@ class MainActivity : ComponentActivity() {
             if (want) {
                 if (riskAcked) {
                     val i = VpnService.prepare(ctx)
-                    if (i != null) vpnLauncher.launch(i)
-                    else launchVpn(minLag, maxLag, dropPct, spikePct)
+                    if (i != null) vpnLauncher.launch(i) else launchVpn(minLag, maxLag, dropPct, spikePct)
                 } else showRisk = true
             } else stopVpn()
         }
@@ -352,8 +317,7 @@ class MainActivity : ComponentActivity() {
                             prefs.edit().putBoolean(KEY_RISK, true).apply()
                             riskAcked = true; showRisk = false
                             val i = VpnService.prepare(ctx)
-                            if (i != null) vpnLauncher.launch(i)
-                            else launchVpn(minLag, maxLag, dropPct, spikePct)
+                            if (i != null) vpnLauncher.launch(i) else launchVpn(minLag, maxLag, dropPct, spikePct)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = C.Warning),
                         shape  = RoundedCornerShape(R.Bt)
@@ -364,69 +328,68 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-        if (showSettings) SettingsSheet(
-            minLag, maxLag, dropPct, spikePct,
-            { minLag = it }, { maxLag = it }, { dropPct = it }, { spikePct = it }
-        ) { showSettings = false }
-
+        if (showSettings) SettingsSheet(minLag, maxLag, dropPct, spikePct, { minLag = it }, { maxLag = it }, { dropPct = it }, { spikePct = it }) { showSettings = false }
         if (showLogs) LogsScreen(logSnapshot, logEnabled, { logEnabled = it; DesyncLog.enabled.set(it) }) { showLogs = false }
 
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            HeroSection(active, wifiName, curDelay, minLag.toLong(), maxLag.toLong())
-
-            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                Spacer(Modifier.height(20.dp))
-                ToggleCard(active) { toggleVpn(it) }
-                Spacer(Modifier.height(16.dp))
-                PingGraph(pingHistory, active)
-                Spacer(Modifier.height(16.dp))
-                StatsRow(totalPkts, delayedPkts, droppedPkts)
-                Spacer(Modifier.height(16.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { showSettings = true }, modifier = Modifier.weight(1f).height(52.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = C.Card), shape = RoundedCornerShape(R.Bt)) {
-                        Icon(Icons.Outlined.Tune, null, tint = C.Primary, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Configurar", fontWeight = FontWeight.Bold, color = C.White)
+        // FIX: Box raiz com fillMaxSize para o FAB flutuar sobre o conteúdo scrollável
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                HeroSection(active, wifiName, curDelay, minLag.toLong(), maxLag.toLong())
+                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                    Spacer(Modifier.height(20.dp))
+                    ToggleCard(active) { toggleVpn(it) }
+                    Spacer(Modifier.height(16.dp))
+                    PingGraph(pingHistory, active)
+                    Spacer(Modifier.height(16.dp))
+                    StatsRow(totalPkts, delayedPkts, droppedPkts)
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { showSettings = true }, modifier = Modifier.weight(1f).height(52.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = C.Card), shape = RoundedCornerShape(R.Bt)) {
+                            Icon(Icons.Outlined.Tune, null, tint = C.Primary, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Configurar", fontWeight = FontWeight.Bold, color = C.White)
+                        }
+                        Button(onClick = { showLogs = true }, modifier = Modifier.weight(1f).height(52.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = C.Card), shape = RoundedCornerShape(R.Bt)) {
+                            Icon(Icons.Outlined.Terminal, null, tint = C.Accent, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Logs", fontWeight = FontWeight.Bold, color = C.White)
+                        }
                     }
-                    Button(onClick = { showLogs = true }, modifier = Modifier.weight(1f).height(52.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = C.Card), shape = RoundedCornerShape(R.Bt)) {
-                        Icon(Icons.Outlined.Terminal, null, tint = C.Accent, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Logs", fontWeight = FontWeight.Bold, color = C.White)
+                    Spacer(Modifier.height(24.dp))
+                    PresetsRow { mn, mx, dp, sp ->
+                        minLag = mn; maxLag = mx; dropPct = dp; spikePct = sp
+                        if (active) DesyncLog.add("PRESET", "Preset aplicado — ${mn.toInt()}–${mx.toInt()}ms loss=${dp.toInt()}%")
                     }
+                    Spacer(Modifier.height(32.dp))
+                    Footer(footerClicks) {
+                        footerClicks++
+                        if (footerClicks >= 5) { showLogs = true; footerClicks = 0 }
+                    }
+                    Spacer(Modifier.height(100.dp))
                 }
-                Spacer(Modifier.height(24.dp))
-                PresetsRow { mn, mx, dp, sp ->
-                    minLag = mn; maxLag = mx; dropPct = dp; spikePct = sp
-                    if (active) DesyncLog.add("PRESET", "Preset aplicado — ${mn.toInt()}–${mx.toInt()}ms loss=${dp.toInt()}%")
-                }
-                Spacer(Modifier.height(32.dp))
-                Footer(footerClicks) {
-                    footerClicks++
-                    if (footerClicks >= 5) { showLogs = true; footerClicks = 0 }
-                }
-                Spacer(Modifier.height(24.dp))
             }
+
+            // FIX: FAB fora do Column scrollável, sobreposto via Box.align
+            FloatButton(
+                modifier   = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 80.dp),
+                active     = active,
+                minLag     = minLag,
+                maxLag     = maxLag,
+                dropPct    = dropPct,
+                spikePct   = spikePct,
+                onToggle   = { toggleVpn(!active) },
+                onSettings = { showSettings = true },
+                onLogs     = { showLogs = true },
+                onPreset   = { mn, mx, dp, sp -> minLag = mn; maxLag = mx; dropPct = dp; spikePct = sp }
+            )
         }
-
-        FloatButton(
-            active     = active,
-            minLag     = minLag,
-            maxLag     = maxLag,
-            dropPct    = dropPct,
-            spikePct   = spikePct,
-            onToggle   = { toggleVpn(!active) },
-            onSettings = { showSettings = true },
-            onLogs     = { showLogs = true },
-            onPreset   = { mn, mx, dp, sp ->
-                minLag = mn; maxLag = mx; dropPct = dp; spikePct = sp
-            }
-        )
     }
 
     @Composable
     fun FloatButton(
+        modifier: Modifier = Modifier,
         active: Boolean,
         minLag: Float,
         maxLag: Float,
@@ -439,90 +402,58 @@ class MainActivity : ComponentActivity() {
     ) {
         var expanded by remember { mutableStateOf(false) }
         var offsetX  by remember { mutableFloatStateOf(0f) }
-        var offsetY  by remember { mutableFloatStateOf(200f) }
+        var offsetY  by remember { mutableFloatStateOf(0f) }
         var dragging by remember { mutableStateOf(false) }
 
-        val pulse = rememberInfiniteTransition(label = "fp")
-        val pAlpha by pulse.animateFloat(
-            0.5f, 1f,
-            infiniteRepeatable(tween(900, easing = EaseInOutCubic), RepeatMode.Reverse),
-            label = "pa"
-        )
-        val btnColor by animateFloatAsState(if (active) 1f else 0f, tween(300), label = "bc")
+        val pulse  = rememberInfiniteTransition(label = "fp")
+        val pAlpha by pulse.animateFloat(0.5f, 1f, infiniteRepeatable(tween(900, easing = EaseInOutCubic), RepeatMode.Reverse), label = "pa")
         val fabColor = if (active) C.Primary.copy(alpha = pAlpha) else C.Surface
 
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(end = 16.dp, bottom = 80.dp),
-            contentAlignment = Alignment.BottomEnd
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = modifier.offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
         ) {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            AnimatedVisibility(
+                visible = expanded,
+                enter   = fadeIn(tween(200)) + scaleIn(tween(200)) + expandVertically(tween(200)),
+                exit    = fadeOut(tween(150)) + scaleOut(tween(150)) + shrinkVertically(tween(150))
             ) {
-                AnimatedVisibility(
-                    visible = expanded,
-                    enter   = fadeIn(tween(200)) + scaleIn(tween(200)) + expandVertically(tween(200)),
-                    exit    = fadeOut(tween(150)) + scaleOut(tween(150)) + shrinkVertically(tween(150))
-                ) {
-                    FloatMenu(
-                        active   = active,
-                        minLag   = minLag,
-                        maxLag   = maxLag,
-                        dropPct  = dropPct,
-                        spikePct = spikePct,
-                        onToggle   = { onToggle(); expanded = false },
-                        onSettings = { onSettings(); expanded = false },
-                        onLogs     = { onLogs(); expanded = false },
-                        onPreset   = { mn, mx, dp, sp -> onPreset(mn, mx, dp, sp) },
-                        onDismiss  = { expanded = false }
-                    )
-                }
-
-                Box(
-                    Modifier
-                        .size(60.dp)
-                        .shadow(8.dp, CircleShape)
-                        .background(fabColor, CircleShape)
-                        .border(
-                            1.5.dp,
-                            if (active) C.Primary.copy(0.6f) else C.Border,
-                            CircleShape
-                        )
-                        .pointerInput(Unit) {
-                            detectDragGestures(
-                                onDragStart = { dragging = false },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    offsetX += dragAmount.x
-                                    offsetY += dragAmount.y
-                                    dragging = true
-                                },
-                                onDragEnd = { dragging = false }
-                            )
-                        }
-                        .pointerInput(Unit) {
-                            detectTapGestures {
-                                if (!dragging) expanded = !expanded
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    AnimatedContent(
-                        targetState = active,
-                        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
-                        label = "fabIcon"
-                    ) { on ->
-                        Icon(
-                            if (on) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            null,
-                            tint     = if (on) Color.White else C.Primary,
-                            modifier = Modifier.size(28.dp)
+                FloatMenu(
+                    active = active, minLag = minLag, maxLag = maxLag, dropPct = dropPct, spikePct = spikePct,
+                    onToggle   = { onToggle(); expanded = false },
+                    onSettings = { onSettings(); expanded = false },
+                    onLogs     = { onLogs(); expanded = false },
+                    onPreset   = { mn, mx, dp, sp -> onPreset(mn, mx, dp, sp) },
+                    onDismiss  = { expanded = false }
+                )
+            }
+            Box(
+                Modifier
+                    .size(60.dp)
+                    .shadow(8.dp, CircleShape)
+                    .background(fabColor, CircleShape)
+                    .border(1.5.dp, if (active) C.Primary.copy(0.6f) else C.Border, CircleShape)
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { dragging = false },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                offsetX += dragAmount.x
+                                offsetY += dragAmount.y
+                                dragging = true
+                            },
+                            onDragEnd = { dragging = false }
                         )
                     }
+                    .pointerInput(Unit) {
+                        detectTapGestures { if (!dragging) expanded = !expanded }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                AnimatedContent(targetState = active, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) }, label = "fabIcon") { on ->
+                    Icon(if (on) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, null,
+                        tint = if (on) Color.White else C.Primary, modifier = Modifier.size(28.dp))
                 }
             }
         }
@@ -530,24 +461,14 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun FloatMenu(
-        active: Boolean,
-        minLag: Float,
-        maxLag: Float,
-        dropPct: Float,
-        spikePct: Float,
-        onToggle: () -> Unit,
-        onSettings: () -> Unit,
-        onLogs: () -> Unit,
-        onPreset: (Float, Float, Float, Float) -> Unit,
-        onDismiss: () -> Unit
+        active: Boolean, minLag: Float, maxLag: Float, dropPct: Float, spikePct: Float,
+        onToggle: () -> Unit, onSettings: () -> Unit, onLogs: () -> Unit,
+        onPreset: (Float, Float, Float, Float) -> Unit, onDismiss: () -> Unit
     ) {
         Card(
             colors   = CardDefaults.cardColors(containerColor = C.Card),
             shape    = RoundedCornerShape(R.C),
-            modifier = Modifier
-                .width(240.dp)
-                .border(1.dp, C.Border, RoundedCornerShape(R.C))
-                .shadow(12.dp, RoundedCornerShape(R.C))
+            modifier = Modifier.width(240.dp).border(1.dp, C.Border, RoundedCornerShape(R.C)).shadow(12.dp, RoundedCornerShape(R.C))
         ) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -557,37 +478,24 @@ class MainActivity : ComponentActivity() {
                         Text(if (active) "Ativo" else "Inativo", fontSize = 11.sp, color = if (active) C.Success else C.Muted, fontWeight = FontWeight.Bold)
                     }
                 }
-
                 HorizontalDivider(color = C.Border)
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .height(40.dp)
-                            .background(
-                                if (active) C.Error.copy(0.15f) else C.Primary.copy(0.15f),
-                                RoundedCornerShape(R.M)
-                            )
-                            .border(1.dp, if (active) C.Error.copy(0.3f) else C.Primary.copy(0.3f), RoundedCornerShape(R.M))
-                            .clickable { onToggle() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Icon(if (active) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, null,
-                                tint = if (active) C.Error else C.Primary, modifier = Modifier.size(15.dp))
-                            Text(if (active) "Pausar" else "Iniciar", fontSize = 12.sp,
-                                color = if (active) C.Error else C.Primary, fontWeight = FontWeight.Bold)
-                        }
+                Box(
+                    Modifier.fillMaxWidth().height(40.dp)
+                        .background(if (active) C.Error.copy(0.15f) else C.Primary.copy(0.15f), RoundedCornerShape(R.M))
+                        .border(1.dp, if (active) C.Error.copy(0.3f) else C.Primary.copy(0.3f), RoundedCornerShape(R.M))
+                        .clickable { onToggle() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Icon(if (active) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, null,
+                            tint = if (active) C.Error else C.Primary, modifier = Modifier.size(15.dp))
+                        Text(if (active) "Pausar" else "Iniciar", fontSize = 12.sp,
+                            color = if (active) C.Error else C.Primary, fontWeight = FontWeight.Bold)
                     }
                 }
-
                 Text("${minLag.toInt()}ms – ${maxLag.toInt()}ms lag", fontSize = 11.sp, color = C.Muted, fontFamily = FontFamily.Monospace)
-
                 HorizontalDivider(color = C.Border)
-
                 Text("Presets rápidos", fontSize = 10.sp, color = C.Muted, fontWeight = FontWeight.Bold)
-
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(
                         Triple("Leve",    Triple(20f,  80f,  0f),  3f),
@@ -598,41 +506,28 @@ class MainActivity : ComponentActivity() {
                         val (name, lagLoss, spike) = preset
                         val (mn, mx, dp) = lagLoss
                         Box(
-                            Modifier
-                                .weight(1f)
-                                .background(color.copy(0.10f), RoundedCornerShape(6.dp))
+                            Modifier.weight(1f).background(color.copy(0.10f), RoundedCornerShape(6.dp))
                                 .border(1.dp, color.copy(0.25f), RoundedCornerShape(6.dp))
-                                .clickable { onPreset(mn, mx, dp, spike) }
-                                .padding(vertical = 6.dp),
+                                .clickable { onPreset(mn, mx, dp, spike) }.padding(vertical = 6.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(name, fontSize = 9.sp, color = color, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
                         }
                     }
                 }
-
                 HorizontalDivider(color = C.Border)
-
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        Modifier.weight(1f).height(34.dp)
-                            .background(C.Surface, RoundedCornerShape(R.M))
-                            .border(1.dp, C.Border, RoundedCornerShape(R.M))
-                            .clickable { onSettings() },
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Box(Modifier.weight(1f).height(34.dp).background(C.Surface, RoundedCornerShape(R.M))
+                        .border(1.dp, C.Border, RoundedCornerShape(R.M)).clickable { onSettings() },
+                        contentAlignment = Alignment.Center) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             Icon(Icons.Outlined.Settings, null, tint = C.Primary, modifier = Modifier.size(13.dp))
                             Text("Config", fontSize = 11.sp, color = C.Sub, fontWeight = FontWeight.Medium)
                         }
                     }
-                    Box(
-                        Modifier.weight(1f).height(34.dp)
-                            .background(C.Surface, RoundedCornerShape(R.M))
-                            .border(1.dp, C.Border, RoundedCornerShape(R.M))
-                            .clickable { onLogs() },
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Box(Modifier.weight(1f).height(34.dp).background(C.Surface, RoundedCornerShape(R.M))
+                        .border(1.dp, C.Border, RoundedCornerShape(R.M)).clickable { onLogs() },
+                        contentAlignment = Alignment.Center) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             Icon(Icons.Outlined.Terminal, null, tint = C.Accent, modifier = Modifier.size(13.dp))
                             Text("Logs", fontSize = 11.sp, color = C.Sub, fontWeight = FontWeight.Medium)
@@ -647,22 +542,16 @@ class MainActivity : ComponentActivity() {
     fun HeroSection(active: Boolean, wifiName: String?, curDelay: Long, minLag: Long, maxLag: Long) {
         val tr    = rememberInfiniteTransition(label = "h")
         val pulse by tr.animateFloat(0.88f, 1f, infiniteRepeatable(tween(1200, easing = EaseInOutCubic), RepeatMode.Reverse), label = "p")
-        val glow  by tr.animateFloat(0.3f, 0.9f,  infiniteRepeatable(tween(1400, easing = EaseInOutCubic), RepeatMode.Reverse), label = "g")
+        val glow  by tr.animateFloat(0.3f, 0.9f, infiniteRepeatable(tween(1400, easing = EaseInOutCubic), RepeatMode.Reverse), label = "g")
         val rot   by tr.animateFloat(0f, 360f, infiniteRepeatable(tween(7000, easing = LinearEasing)), label = "r")
 
-        Box(
-            Modifier.fillMaxWidth().height(280.dp)
-                .background(Brush.verticalGradient(listOf(C.Bg, C.Primary.copy(if (active) 0.09f else 0.02f), C.Bg)))
-        ) {
+        Box(Modifier.fillMaxWidth().height(280.dp).background(Brush.verticalGradient(listOf(C.Bg, C.Primary.copy(if (active) 0.09f else 0.02f), C.Bg)))) {
             Canvas(Modifier.fillMaxSize()) {
                 val cx = size.width / 2f; val cy = size.height / 2f
                 repeat(4) { i ->
-                    drawCircle(
-                        C.Primary.copy(if (active) (0.12f - i * 0.025f) * glow else 0.02f),
-                        (85f + i * 48f) * if (active) pulse else 1f,
-                        Offset(cx, cy),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(if (i == 0) 1.5f else 0.8f)
-                    )
+                    drawCircle(C.Primary.copy(if (active) (0.12f - i * 0.025f) * glow else 0.02f),
+                        (85f + i * 48f) * if (active) pulse else 1f, Offset(cx, cy),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(if (i == 0) 1.5f else 0.8f))
                 }
                 if (active) {
                     val rr = 120f; val a = (rot * Math.PI / 180f).toFloat()
@@ -805,7 +694,7 @@ class MainActivity : ComponentActivity() {
                     listOf("Pesado",  C.Error,   150f, 400f, 5f,  18f),
                     listOf("Extremo", C.Pink,    300f, 900f, 12f, 40f)
                 ).forEach { p ->
-                    val name  = p[0] as String; val color = p[1] as Color
+                    val name = p[0] as String; val color = p[1] as Color
                     val mn = p[2] as Float; val mx = p[3] as Float; val dp = p[4] as Float; val sp = p[5] as Float
                     Box(Modifier.weight(1f).background(color.copy(0.08f), RoundedCornerShape(R.M))
                         .border(1.dp, color.copy(0.2f), RoundedCornerShape(R.M))
@@ -966,9 +855,9 @@ class MainActivity : ComponentActivity() {
 }
 
 private fun getWifiName(ctx: Context): String? = try {
-    val wm   = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
     @Suppress("DEPRECATION")
-    val info = wm?.connectionInfo
-    @Suppress("DEPRECATION")
-    info?.ssid?.removePrefix("\"")?.removeSuffix("\"")?.takeIf { it.isNotEmpty() && it != "<unknown ssid>" }
+    wm?.connectionInfo?.ssid
+        ?.removePrefix("\"")?.removeSuffix("\"")
+        ?.takeIf { it.isNotBlank() && it != "<unknown ssid>" && it != "0x" }
 } catch (_: Exception) { null }
